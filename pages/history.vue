@@ -193,7 +193,7 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
-const { get } = useApi()
+const { get, request } = useApi()
 
 const records = ref<any[]>([])
 const sensors = ref<any[]>([])
@@ -336,15 +336,11 @@ const fetchChartData = async () => {
 
     const result = await get('/api/temperature/chart', params)
     if (result?.success && result.data) {
-      const rawRecords = result.data
+      const { labels, temperatures: rawTemps, records: rawRecords } = result.data
       const sensor = sensors.value.find(s => s.id === chartSensorId.value)
-      const labels = rawRecords.map((r: any) => {
-        const d = new Date(r.recordTime)
-        return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-      })
-      const temperatures = rawRecords.map((r: any) => r.temperature)
-      const warningMaxArr = new Array(labels.length).fill(sensor?.warningMax || 8)
-      const warningMinArr = new Array(labels.length).fill(sensor?.warningMin || 2)
+      const temperatures = rawTemps.map((t: any) => Number(t))
+      const warningMaxArr = new Array(labels.length).fill(Number(sensor?.warningMax || 8))
+      const warningMinArr = new Array(labels.length).fill(Number(sensor?.warningMin || 2))
 
       chartData.value = {
         labels,
@@ -356,7 +352,7 @@ const fetchChartData = async () => {
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             fill: true,
             tension: 0.4,
-            pointRadius: rawRecords.length > 100 ? 0 : 3
+            pointRadius: rawRecords && rawRecords.length > 100 ? 0 : 3
           },
           {
             label: '预警上限',
@@ -395,14 +391,43 @@ const changePage = (newPage: number) => {
   fetchRecords()
 }
 
-const exportData = (format: string) => {
+const { token } = useAuth()
+
+const exportData = async (format: string) => {
   const params = new URLSearchParams()
   params.set('format', format)
   if (filters.value.sensorId) params.set('sensorId', String(filters.value.sensorId))
   if (filters.value.locationId) params.set('locationId', String(filters.value.locationId))
   if (filters.value.startTime) params.set('startTime', filters.value.startTime)
   if (filters.value.endTime) params.set('endTime', filters.value.endTime)
-  window.open(`/api/temperature/export?${params.toString()}`, '_blank')
+
+  const url = `/api/temperature/export?${params.toString()}`
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token.value}`
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error('导出失败')
+    }
+
+    const blob = await response.blob()
+    const blobUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    const ext = format === 'excel' ? 'xlsx' : 'csv'
+    link.download = `temperature_records_${Date.now()}.${ext}`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(blobUrl)
+  } catch (e) {
+    console.error('Export failed:', e)
+    alert('导出失败，请重试')
+  }
 }
 
 watch(chartSensorId, () => {

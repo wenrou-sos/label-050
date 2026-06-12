@@ -45,14 +45,19 @@ export default defineEventHandler(async (event) => {
     const d = new Date(r.recordTime)
     return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   })
-  const temperatures = records.map(r => r.temperature)
+  const temperatures = records.map(r => Number(r.temperature))
+  const formattedRecords = records.map(r => ({
+    ...r,
+    temperature: Number(r.temperature),
+    humidity: r.humidity ? Number(r.humidity) : null
+  }))
 
   return {
     success: true,
     data: {
       labels,
       temperatures,
-      records
+      records: formattedRecords
     }
   }
 })

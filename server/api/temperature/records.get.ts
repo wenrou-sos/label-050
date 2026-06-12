@@ -43,14 +43,14 @@ export default defineEventHandler(async (event) => {
   ])
 
   const data = records.map(record => ({
-    id: record.id,
+    id: record.id.toString(),
     sensorId: record.sensorId,
     sensorName: record.sensor?.name,
     sensorCode: record.sensor?.code,
     locationId: record.locationId,
     locationName: record.location?.name,
-    temperature: record.temperature,
-    humidity: record.humidity,
+    temperature: Number(record.temperature),
+    humidity: record.humidity ? Number(record.humidity) : null,
     recordTime: record.recordTime,
     isAbnormal: record.isAbnormal,
     abnormalType: record.abnormalType,

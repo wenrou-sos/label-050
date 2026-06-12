@@ -2,6 +2,11 @@ import { jwtVerify } from 'jose'
 
 export default defineEventHandler(async (event) => {
   const path = getRequestURL(event).pathname
+
+  if (!path.startsWith('/api/')) {
+    return
+  }
+
   if (path.startsWith('/api/auth/login') || path.startsWith('/api/auth/register')) {
     return
   }
