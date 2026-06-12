@@ -1,67 +1,34 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-diagnostics.log
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*$py.class
 
-# Diagnostic reports
-report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage
-*.lcov
-
-# nyc test coverage
-.nyc_output
-
-# Dependency directories
-node_modules/
-jspm_packages/
-web_modules/
-
-# Nuxt.js build / generate output
-.nuxt
-dist
-
-# Next.js build output
-.next
-out
-
-# SvelteKit
-.svelte-kit/
-
-# TypeScript
-*.tsbuildinfo
-
-# Environment files
-.env
-.env.*
-!.env.example
-
-# Cache
-.eslintcache
-.stylelintcache
-.cache
-.turbo
+# Virtual environment
+venv/
+env/
+.venv/
+.env/
 
 # IDE
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-.idea
+.vscode/
+.idea/
 *.swp
 *.swo
-*~
+
+# OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+
+# Distribution
+dist/
+build/
+*.egg-info/
+
+# Test outputs
+.coverage
+htmlcov/
+.pytest_cache/
+node_modules

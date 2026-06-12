@@ -1,0 +1,280 @@
+// Prisma schema for Cold Chain Temperature Monitoring Platform
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique @db.VarChar(50)
+  description String?   @db.Text
+  permissions Json      @default("[]")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  users       User[]
+}
+
+model User {
+  id         Int        @id @default(autoincrement())
+  username   String     @unique @db.VarChar(100)
+  email      String     @unique @db.VarChar(200)
+  password   String     @db.VarChar(255)
+  realName   String?    @db.VarChar(100)
+  phone      String?    @db.VarChar(20)
+  avatar     String?    @db.VarChar(500)
+  roleId     Int
+  role       Role       @relation(fields: [roleId], references: [id])
+  status     String     @default("active") @db.VarChar(20)
+  lastLogin  DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  alerts     Alert[]    @relation("AlertCreatedBy")
+  workOrders WorkOrder[] @relation("WorkOrderAssignee")
+  createdWorkOrders WorkOrder[] @relation("WorkOrderCreator")
+  handlingRecords WorkOrderRecord[]
+
+  @@index([roleId])
+  @@index([status])
+}
+
+model Location {
+  id           Int       @id @default(autoincrement())
+  name         String    @db.VarChar(200)
+  code         String    @unique @db.VarChar(50)
+  type         String    @db.VarChar(20)
+  description  String?   @db.Text
+  address      String?   @db.VarChar(500)
+  contactName  String?   @db.VarChar(100)
+  contactPhone String?   @db.VarChar(20)
+  status       String    @default("active") @db.VarChar(20)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sensors      Sensor[]
+  goods        Goods[]
+
+  @@index([type])
+  @@index([status])
+}
+
+model Goods {
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(200)
+  code        String    @unique @db.VarChar(50)
+  type        String    @db.VarChar(50)
+  description String?   @db.Text
+  locationId  Int?
+  location    Location? @relation(fields: [locationId], references: [id])
+  minTemp     Float     @default(-25)
+  maxTemp     Float     @default(4)
+  minHumidity Float?
+  maxHumidity Float?
+  status      String    @default("active") @db.VarChar(20)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  sensors     Sensor[]
+
+  @@index([locationId])
+  @@index([type])
+}
+
+model Sensor {
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(200)
+  code        String    @unique @db.VarChar(50)
+  sensorType  String    @default("temperature") @db.VarChar(30)
+  locationId  Int
+  location    Location  @relation(fields: [locationId], references: [id])
+  goodsId     Int?
+  goods       Goods?    @relation(fields: [goodsId], references: [id])
+  model       String?   @db.VarChar(100)
+  manufacturer String?  @db.VarChar(200)
+  installDate DateTime?
+  minTemp     Float     @default(-30)
+  maxTemp     Float     @default(10)
+  warningMin  Float     @default(-25)
+  warningMax  Float     @default(4)
+  currentTemp Float?
+  lastUpdate  DateTime?
+  status      String    @default("online") @db.VarChar(20)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  temperatureRecords TemperatureRecord[]
+  alerts      Alert[]
+
+  @@index([locationId])
+  @@index([goodsId])
+  @@index([status])
+  @@index([lastUpdate])
+}
+
+model TemperatureRecord {
+  id         BigInt    @id @default(autoincrement())
+  sensorId   Int
+  sensor     Sensor    @relation(fields: [sensorId], references: [id])
+  temperature Decimal  @db.Decimal(5, 2)
+  humidity   Decimal?  @db.Decimal(5, 2)
+  recordTime DateTime  @default(now())
+  isAbnormal Boolean   @default(false)
+  abnormalType String? @db.VarChar(30)
+  locationId Int?
+
+  @@index([sensorId])
+  @@index([recordTime])
+  @@index([isAbnormal])
+  @@index([locationId, recordTime])
+}
+
+model Alert {
+  id          Int       @id @default(autoincrement())
+  sensorId    Int
+  sensor      Sensor    @relation(fields: [sensorId], references: [id])
+  alertType   String    @db.VarChar(50)
+  level       String    @default("warning") @db.VarChar(20)
+  title       String    @db.VarChar(300)
+  content     String?   @db.Text
+  temperature Decimal   @db.Decimal(5, 2)
+  thresholdMin Decimal?  @db.Decimal(5, 2)
+  thresholdMax Decimal?  @db.Decimal(5, 2)
+  status      String    @default("pending") @db.VarChar(20)
+  notifSys    Boolean   @default(true)
+  notifEmail  Boolean   @default(false)
+  notifSms    Boolean   @default(false)
+  createdById Int
+  createdBy   User      @relation("AlertCreatedBy", fields: [createdById], references: [id])
+  handledAt   DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workOrders  WorkOrder[]
+
+  @@index([sensorId])
+  @@index([level])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum WorkOrderStatus {
+  PENDING
+  ASSIGNED
+  PROCESSING
+  COMPLETED
+  CLOSED
+}
+
+enum WorkOrderPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model WorkOrder {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.VarChar(50)
+  title       String    @db.VarChar(300)
+  description String?   @db.Text
+  alertId     Int?
+  alert       Alert?    @relation(fields: [alertId], references: [id])
+  status      WorkOrderStatus @default(PENDING)
+  priority    WorkOrderPriority @default(MEDIUM)
+  assigneeId  Int?
+  assignee    User?     @relation("WorkOrderAssignee", fields: [assigneeId], references: [id])
+  creatorId   Int
+  creator     User      @relation("WorkOrderCreator", fields: [creatorId], references: [id])
+  dueDate     DateTime?
+  assignedAt  DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  records     WorkOrderRecord[]
+  attachments WorkOrderAttachment[]
+
+  @@index([alertId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+}
+
+model WorkOrderRecord {
+  id          Int       @id @default(autoincrement())
+  workOrderId Int
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id])
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id])
+  action      String    @db.VarChar(50)
+  content     String    @db.Text
+  createdAt   DateTime  @default(now())
+
+  @@index([workOrderId])
+  @@index([userId])
+}
+
+model WorkOrderAttachment {
+  id          Int       @id @default(autoincrement())
+  workOrderId Int
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id])
+  fileName    String    @db.VarChar(255)
+  filePath    String    @db.VarChar(500)
+  fileType    String?   @db.VarChar(100)
+  fileSize    Int?
+  uploadedAt  DateTime  @default(now())
+
+  @@index([workOrderId])
+}
+
+model AlertSubscription {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  sensorId  Int
+  notifySys Boolean  @default(true)
+  notifyEmail Boolean @default(false)
+  notifySms Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, sensorId])
+  @@index([userId])
+  @@index([sensorId])
+}
+
+model ComplianceReport {
+  id            Int      @id @default(autoincrement())
+  reportMonth   String   @db.VarChar(7)
+  locationId    Int?
+  locationName  String?  @db.VarChar(200)
+  goodsType     String?  @db.VarChar(50)
+  sensorId      Int?
+  sensorName    String?  @db.VarChar(200)
+  totalDuration Int      @default(0)
+  compliantDuration Int  @default(0)
+  complianceRate Float   @default(0)
+  alertCount    Int      @default(0)
+  abnormalMinutes Int    @default(0)
+  generatedAt   DateTime @default(now())
+
+  @@index([reportMonth])
+  @@index([locationId])
+  @@index([sensorId])
+  @@unique([reportMonth, locationId, goodsType, sensorId])
+}
+
+model SystemLog {
+  id        BigInt   @id @default(autoincrement())
+  userId    Int?
+  username  String?  @db.VarChar(100)
+  action    String   @db.VarChar(100)
+  module    String?  @db.VarChar(50)
+  details   Json?
+  ipAddress String?  @db.VarChar(45)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
