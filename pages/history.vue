@@ -69,19 +69,30 @@
             <option value="linear">线性回归</option>
             <option value="sma">移动平均</option>
           </select>
-          <span v-if="predictionInfo.method" class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
-            模型: {{ predictionInfo.method === 'linear' ? '线性回归' : '移动平均' }} · R²: {{ predictionInfo.rSquared }}
-            <span v-if="predictionInfo.lastRecordTime" class="ml-1 text-slate-400">| 基准: {{ predictionInfo.lastRecordTime }} ({{ predictionInfo.lastTemperature }}°C)</span>
+          <span v-if="selectedCount > 0 && Object.keys(predictionInfo).length > 0" class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
+            已选 {{ selectedCount }} 个传感器 · {{ showPrediction ? '预测已开启' : '预测已关闭' }}
           </span>
-          <span v-if="predictionInfo.hasWarning" class="text-xs text-red-600 bg-red-50 px-2 py-1 rounded flex items-center gap-1">
+          <span v-if="Object.values(predictionInfo).some((p: any) => p.hasWarning)" class="text-xs text-red-600 bg-red-50 px-2 py-1 rounded flex items-center gap-1">
             <span class="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
-            预测将超温
+            {{ Object.values(predictionInfo).filter((p: any) => p.hasWarning).length }} 个传感器预测将超温
           </span>
         </div>
-        <div class="flex items-center gap-3">
-          <select v-model="chartSensorId" class="text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
-            <option v-for="sensor in sensors" :key="sensor.id" :value="sensor.id">{{ sensor.name }}</option>
-          </select>
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="relative">
+            <select
+              multiple
+              v-model="chartSensorIds"
+              size="4"
+              class="min-w-[180px] h-[110px] text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+            >
+              <option v-for="sensor in sensors" :key="sensor.id" :value="sensor.id">
+                {{ sensor.name }}
+              </option>
+            </select>
+            <div class="text-xs text-slate-400 mt-1">
+              已选 {{ selectedCount }} 个 (按住 Ctrl 多选)
+            </div>
+          </div>
           <button @click="fetchChartData" class="px-3 py-1.5 bg-slate-100 text-slate-700 text-sm rounded-lg hover:bg-slate-200 transition-colors">
             刷新图表
           </button>
@@ -232,17 +243,25 @@ const filters = ref({
   isAbnormal: '' as string
 })
 
-const chartSensorId = ref<number | ''>('')
+const chartSensorIds = ref<number[]>([])
 const chartData = ref<any>(null)
 const showPrediction = ref(true)
 const predictionMethod = ref<'auto' | 'linear' | 'sma'>('auto')
-const predictionInfo = ref({
-  method: '',
-  rSquared: 0,
-  hasWarning: false,
-  lastRecordTime: '',
-  lastTemperature: 0
-})
+const predictionInfo = ref<{ [key: number]: any }>({})
+const selectedCount = computed(() => chartSensorIds.value.length)
+
+const SENSOR_COLORS = [
+  { border: '#3b82f6', fill: 'rgba(59, 130, 246, 0.1)', pred: '#8b5cf6', ci: 'rgba(139, 92, 246, 0.12)' },
+  { border: '#10b981', fill: 'rgba(16, 185, 129, 0.1)', pred: '#059669', ci: 'rgba(16, 185, 129, 0.12)' },
+  { border: '#f97316', fill: 'rgba(249, 115, 22, 0.1)', pred: '#ea580c', ci: 'rgba(249, 115, 22, 0.12)' },
+  { border: '#ec4899', fill: 'rgba(236, 72, 153, 0.1)', pred: '#db2777', ci: 'rgba(236, 72, 153, 0.12)' },
+  { border: '#06b6d4', fill: 'rgba(6, 182, 212, 0.1)', pred: '#0891b2', ci: 'rgba(6, 182, 212, 0.12)' },
+  { border: '#a855f7', fill: 'rgba(168, 85, 247, 0.1)', pred: '#9333ea', ci: 'rgba(168, 85, 247, 0.12)' },
+  { border: '#84cc16', fill: 'rgba(132, 204, 22, 0.1)', pred: '#65a30d', ci: 'rgba(132, 204, 22, 0.12)' },
+  { border: '#e11d48', fill: 'rgba(225, 29, 72, 0.1)', pred: '#be123c', ci: 'rgba(225, 29, 72, 0.12)' }
+]
+
+const getSensorColor = (idx: number) => SENSOR_COLORS[idx % SENSOR_COLORS.length]
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
@@ -311,8 +330,8 @@ const fetchSensors = async () => {
     const result = await get('/api/sensors', { pageSize: 100 })
     if (result?.success) {
       sensors.value = result.data
-      if (!chartSensorId.value && result.data.length > 0) {
-        chartSensorId.value = result.data[0].id
+      if (chartSensorIds.value.length === 0 && result.data.length > 0) {
+        chartSensorIds.value = [result.data[0].id]
       }
     }
   } catch (e) {
@@ -355,10 +374,10 @@ const fetchRecords = async () => {
 }
 
 const fetchPrediction = async () => {
-  if (!chartSensorId.value || !showPrediction.value) return null
+  if (chartSensorIds.value.length === 0 || !showPrediction.value) return null
   try {
     const result = await get('/api/temperature/predict', {
-      sensorId: chartSensorId.value,
+      sensorIds: chartSensorIds.value.join(','),
       hours: 24,
       steps: 12,
       stepIntervalSec: 300,
@@ -372,9 +391,9 @@ const fetchPrediction = async () => {
 }
 
 const fetchChartData = async () => {
-  if (!chartSensorId.value) return
+  if (chartSensorIds.value.length === 0) return
   try {
-    const params: any = { sensorId: chartSensorId.value }
+    const params: any = { sensorIds: chartSensorIds.value.join(',') }
     if (filters.value.startTime) params.startTime = filters.value.startTime
     if (filters.value.endTime) params.endTime = filters.value.endTime
     else {
@@ -383,34 +402,135 @@ const fetchChartData = async () => {
       params.startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
     }
 
-    const [chartResult, prediction] = await Promise.all([
+    const [chartResult, predictionRaw] = await Promise.all([
       get('/api/temperature/chart', params),
       fetchPrediction()
     ])
 
     if (chartResult?.success && chartResult.data) {
-      const { labels, temperatures: rawTemps, records: rawRecords } = chartResult.data
-      const sensor = sensors.value.find(s => s.id === chartSensorId.value)
-      const temperatures = rawTemps.map((t: any) => Number(t))
-      const warningMax = Number(sensor?.warningMax || 8)
-      const warningMin = Number(sensor?.warningMin || 2)
-      const warningMaxArr = new Array(labels.length).fill(warningMax)
-      const warningMinArr = new Array(labels.length).fill(warningMin)
+      const { labels, series } = chartResult.data
+      const predictions = predictionRaw
+        ? (Array.isArray(predictionRaw) ? predictionRaw : [predictionRaw])
+        : []
 
-      const datasets: any[] = [
-        {
-          label: '温度',
-          data: temperatures,
-          borderColor: '#3b82f6',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      predictionInfo.value = {}
+      predictions.forEach((p: any) => {
+        if (p && p.sensorId) {
+          predictionInfo.value[p.sensorId] = {
+            method: p.method,
+            rSquared: p.rSquared,
+            hasWarning: p.warningPoints && p.warningPoints.length > 0,
+            lastRecordTime: p.lastRecordTime || '',
+            lastTemperature: p.lastTemperature || 0,
+            sensorName: p.sensorName
+          }
+        }
+      })
+
+      const datasets: any[] = []
+      let mergedLabels = [...labels]
+      let predLabels: string[] = []
+
+      if (predictions.length > 0 && predictions[0].labels && predictions[0].labels.length > 0) {
+        predLabels = predictions[0].labels
+        mergedLabels = [...labels, ...predLabels]
+      }
+
+      const predPlaceholderLen = labels.length
+      const globalWarningMax = Math.min(...series.map((s: any) => s.warningMax))
+      const globalWarningMin = Math.max(...series.map((s: any) => s.warningMin))
+
+      series.forEach((s: any, idx: number) => {
+        const color = getSensorColor(idx)
+        const paddedTemps = predLabels.length > 0
+          ? [...s.temperatures, ...new Array(predLabels.length).fill(null)]
+          : s.temperatures
+
+        datasets.push({
+          label: s.sensorName,
+          data: paddedTemps,
+          borderColor: color.border,
+          backgroundColor: color.fill,
           fill: true,
           tension: 0.4,
-          pointRadius: rawRecords && rawRecords.length > 100 ? 0 : 3,
-          order: 3
-        },
+          pointRadius: s.temperatures.filter((t: any) => t !== null).length > 100 ? 0 : 3,
+          order: 10 + idx
+        })
+
+        if (showPrediction.value) {
+          const pred = predictions.find((p: any) => p.sensorId === s.sensorId)
+          if (pred && pred.labels.length > 0) {
+            const predDataArr = new Array(predPlaceholderLen).fill(null).concat(pred.predicted)
+            const lowerBoundArr = new Array(predPlaceholderLen).fill(null).concat(pred.lowerBound)
+            const upperBoundArr = new Array(predPlaceholderLen).fill(null).concat(pred.upperBound)
+
+            datasets.push(
+              {
+                label: `${s.sensorName} - 95%置信上限`,
+                data: upperBoundArr,
+                borderColor: 'transparent',
+                backgroundColor: color.ci,
+                pointRadius: 0,
+                fill: `+1`,
+                tension: 0.4,
+                order: 100 + idx * 3
+              },
+              {
+                label: `${s.sensorName} - 95%置信下限`,
+                data: lowerBoundArr,
+                borderColor: 'transparent',
+                backgroundColor: color.ci,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.4,
+                order: 101 + idx * 3
+              },
+              {
+                label: `${s.sensorName} - 预测`,
+                data: predDataArr,
+                borderColor: color.pred,
+                borderDash: [8, 4],
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                pointRadius: 4,
+                pointBackgroundColor: color.pred,
+                fill: false,
+                tension: 0.4,
+                order: 50 + idx
+              }
+            )
+
+            if (pred.warningPoints && pred.warningPoints.length > 0) {
+              const warningPointData = new Array(mergedLabels.length).fill(null)
+              pred.warningPoints.forEach((wp: { label: string; value: number }) => {
+                const labelIdx = mergedLabels.indexOf(wp.label)
+                if (labelIdx >= 0) warningPointData[labelIdx] = wp.value
+              })
+              datasets.push({
+                label: `${s.sensorName} - 超温预警`,
+                data: warningPointData,
+                borderColor: 'transparent',
+                backgroundColor: '#ef4444',
+                pointRadius: 8,
+                pointStyle: 'triangle',
+                pointBackgroundColor: '#ef4444',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                showLine: false,
+                order: 1
+              })
+            }
+          }
+        }
+      })
+
+      const warningMaxArrFull = new Array(mergedLabels.length).fill(globalWarningMax)
+      const warningMinArrFull = new Array(mergedLabels.length).fill(globalWarningMin)
+
+      datasets.push(
         {
           label: '预警上限',
-          data: warningMaxArr,
+          data: warningMaxArrFull,
           borderColor: '#f59e0b',
           borderDash: [5, 5],
           pointRadius: 0,
@@ -419,127 +539,14 @@ const fetchChartData = async () => {
         },
         {
           label: '预警下限',
-          data: warningMinArr,
+          data: warningMinArrFull,
           borderColor: '#f59e0b',
           borderDash: [5, 5],
           pointRadius: 0,
           fill: false,
           order: 6
         }
-      ]
-
-      let mergedLabels = [...labels]
-
-      if (prediction && prediction.labels.length > 0) {
-        predictionInfo.value = {
-          method: prediction.method,
-          rSquared: prediction.rSquared,
-          hasWarning: prediction.warningPoints && prediction.warningPoints.length > 0,
-          lastRecordTime: prediction.lastRecordTime || '',
-          lastTemperature: prediction.lastTemperature || 0
-        }
-
-        mergedLabels = [...labels, ...prediction.labels]
-
-        const predPlaceholderLen = labels.length
-        const predDataArr = new Array(predPlaceholderLen).fill(null).concat(prediction.predicted)
-        const lowerBoundArr = new Array(predPlaceholderLen).fill(null).concat(prediction.lowerBound)
-        const upperBoundArr = new Array(predPlaceholderLen).fill(null).concat(prediction.upperBound)
-        const warningMaxArrFull = new Array(mergedLabels.length).fill(warningMax)
-        const warningMinArrFull = new Array(mergedLabels.length).fill(warningMin)
-
-        const warningPointData = new Array(mergedLabels.length).fill(null)
-        if (prediction.warningPoints && prediction.warningPoints.length > 0) {
-          prediction.warningPoints.forEach((wp: { label: string; value: number }) => {
-            const idx = mergedLabels.indexOf(wp.label)
-            if (idx >= 0) warningPointData[idx] = wp.value
-          })
-        }
-
-        datasets.push(
-          {
-            label: '95%置信上限',
-            data: upperBoundArr,
-            borderColor: 'rgba(156, 163, 175, 0)',
-            backgroundColor: 'rgba(147, 197, 253, 0.15)',
-            pointRadius: 0,
-            fill: '+1',
-            tension: 0.4,
-            order: 7
-          },
-          {
-            label: '95%置信下限',
-            data: lowerBoundArr,
-            borderColor: 'rgba(156, 163, 175, 0)',
-            backgroundColor: 'rgba(147, 197, 253, 0.15)',
-            pointRadius: 0,
-            fill: false,
-            tension: 0.4,
-            order: 8
-          },
-          {
-            label: '预测温度',
-            data: predDataArr,
-            borderColor: '#8b5cf6',
-            borderDash: [8, 4],
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            pointRadius: 4,
-            pointBackgroundColor: '#8b5cf6',
-            fill: false,
-            tension: 0.4,
-            order: 2
-          },
-          {
-            label: '预警上限',
-            data: warningMaxArrFull,
-            borderColor: '#f59e0b',
-            borderDash: [5, 5],
-            pointRadius: 0,
-            fill: false,
-            order: 5
-          },
-          {
-            label: '预警下限',
-            data: warningMinArrFull,
-            borderColor: '#f59e0b',
-            borderDash: [5, 5],
-            pointRadius: 0,
-            fill: false,
-            order: 6
-          },
-          {
-            label: '超温预警',
-            data: warningPointData,
-            borderColor: 'transparent',
-            backgroundColor: '#ef4444',
-            pointRadius: 8,
-            pointStyle: 'triangle',
-            pointBackgroundColor: '#ef4444',
-            pointBorderColor: '#fff',
-            pointBorderWidth: 2,
-            showLine: false,
-            order: 1
-          }
-        )
-
-        const existingIdx = datasets.findIndex(d => d.label === '预警上限' && d.order === 5)
-        if (existingIdx >= 0) {
-          datasets.splice(existingIdx, 1)
-        }
-        const existingIdx2 = datasets.findIndex(d => d.label === '预警下限' && d.order === 6)
-        if (existingIdx2 >= 0) {
-          datasets.splice(existingIdx2, 1)
-        }
-        const existingTemp = datasets.findIndex(d => d.label === '温度')
-        if (existingTemp >= 0) {
-          const tempDs = datasets[existingTemp]
-          const paddedTemps = [...temperatures, ...new Array(prediction.labels.length).fill(null)]
-          tempDs.data = paddedTemps
-        }
-      } else {
-        predictionInfo.value = { method: '', rSquared: 0, hasWarning: false, lastRecordTime: '', lastTemperature: 0 }
-      }
+      )
 
       chartData.value = {
         labels: mergedLabels,
@@ -603,9 +610,9 @@ const exportData = async (format: string) => {
   }
 }
 
-watch(chartSensorId, () => {
+watch(chartSensorIds, () => {
   fetchChartData()
-})
+}, { deep: true })
 
 watch([showPrediction, predictionMethod], () => {
   fetchChartData()

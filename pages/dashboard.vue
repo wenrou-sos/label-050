@@ -293,13 +293,16 @@ const fetchChartData = async () => {
     })
     if (result?.success) {
       const data = result.data
-      const sensor = sensors.value.find(s => s.id === chartSensorId.value)
+      const series = (data.series || []).find((s: any) => s.sensorId === chartSensorId.value) || (data.series || [])[0]
+      const temperatures = series ? series.temperatures : (data.temperatures || [])
+      const warningMax = series?.warningMax ?? 8
+      const warningMin = series?.warningMin ?? 2
       chartData.value = {
         labels: data.labels,
         datasets: [
           {
             label: '温度',
-            data: data.temperatures,
+            data: temperatures,
             borderColor: '#3b82f6',
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             fill: true,
@@ -307,14 +310,14 @@ const fetchChartData = async () => {
           },
           {
             label: '预警上限',
-            data: new Array(data.labels.length).fill(sensor?.warningMax || 8),
+            data: new Array(data.labels.length).fill(warningMax),
             borderColor: '#f59e0b',
             borderDash: [5, 5],
             pointRadius: 0
           },
           {
             label: '预警下限',
-            data: new Array(data.labels.length).fill(sensor?.warningMin || 2),
+            data: new Array(data.labels.length).fill(warningMin),
             borderColor: '#f59e0b',
             borderDash: [5, 5],
             pointRadius: 0
