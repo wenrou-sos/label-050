@@ -58,24 +58,39 @@
 
     <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
           <h3 class="text-lg font-semibold text-slate-800">温度趋势图</h3>
           <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-            <input type="checkbox" v-model="showPrediction" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+            <input type="checkbox" v-model="showPrediction" :disabled="compareMode" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50" />
             <span>显示预测</span>
           </label>
-          <select v-if="showPrediction" v-model="predictionMethod" class="text-sm border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+          <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+            <input type="checkbox" v-model="compareMode" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+            <span>对比模式</span>
+          </label>
+          <select v-if="showPrediction && !compareMode" v-model="predictionMethod" class="text-sm border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
             <option value="auto">自动</option>
             <option value="linear">线性回归</option>
             <option value="sma">移动平均</option>
           </select>
-          <span v-if="selectedCount > 0 && Object.keys(predictionInfo).length > 0" class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
-            已选 {{ selectedCount }} 个传感器 · {{ showPrediction ? '预测已开启' : '预测已关闭' }}
-          </span>
-          <span v-if="Object.values(predictionInfo).some((p: any) => p.hasWarning)" class="text-xs text-red-600 bg-red-50 px-2 py-1 rounded flex items-center gap-1">
-            <span class="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
-            {{ Object.values(predictionInfo).filter((p: any) => p.hasWarning).length }} 个传感器预测将超温
-          </span>
+          <template v-if="!compareMode">
+            <span v-if="selectedCount > 0 && Object.keys(predictionInfo).length > 0" class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
+              已选 {{ selectedCount }} 个传感器 · {{ showPrediction ? '预测已开启' : '预测已关闭' }}
+            </span>
+            <span v-if="Object.values(predictionInfo).some((p: any) => p.hasWarning)" class="text-xs text-red-600 bg-red-50 px-2 py-1 rounded flex items-center gap-1">
+              <span class="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
+              {{ Object.values(predictionInfo).filter((p: any) => p.hasWarning).length }} 个传感器预测将超温
+            </span>
+          </template>
+          <template v-else>
+            <span v-if="comparePeriodLabels.periodA || comparePeriodLabels.periodB" class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded flex items-center gap-2">
+              <span class="w-3 h-1 bg-blue-500 rounded"></span>
+              {{ comparePeriodLabels.periodA || '时段A' }}
+              <span class="text-slate-300">vs</span>
+              <span class="w-3 h-0.5 bg-blue-500 rounded border-t-2 border-dashed border-blue-500"></span>
+              {{ comparePeriodLabels.periodB || '时段B' }}
+            </span>
+          </template>
         </div>
         <div class="flex items-center gap-3 flex-wrap">
           <div class="relative">
@@ -98,6 +113,92 @@
           </button>
         </div>
       </div>
+
+      <div v-if="compareMode" class="mb-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <span class="text-sm font-medium text-slate-700">快捷对比:</span>
+          <button 
+            @click="setQuickCompare('weekvslastweek')" 
+            class="px-3 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors" 
+            :class="quickCompare === 'weekvslastweek' ? 'bg-blue-50 border-blue-300 text-blue-600' : ''"
+          >
+            本周vs上周
+          </button>
+          <button 
+            @click="setQuickCompare('monthvslastmonth')" 
+            class="px-3 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors" 
+            :class="quickCompare === 'monthvslastmonth' ? 'bg-blue-50 border-blue-300 text-blue-600' : ''"
+          >
+            本月vs上月
+          </button>
+          <button 
+            @click="setQuickCompare('yesterdayvstoday')" 
+            class="px-3 py-1 text-xs border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors" 
+            :class="quickCompare === 'yesterdayvstoday' ? 'bg-blue-50 border-blue-300 text-blue-600' : ''"
+          >
+            昨天vs今天
+          </button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-3 h-1 bg-blue-500 rounded"></span>
+              <label class="text-sm font-medium text-slate-700">时段A</label>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">开始时间</label>
+                <input 
+                  type="datetime-local" 
+                  v-model="compareFilters.startTimeA" 
+                  class="w-full border border-slate-300 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" 
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">结束时间</label>
+                <input 
+                  type="datetime-local" 
+                  v-model="compareFilters.endTimeA" 
+                  class="w-full border border-slate-300 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" 
+                />
+              </div>
+            </div>
+          </div>
+          <div class="p-3 bg-green-50 rounded-lg border border-green-200">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-3 h-0.5 bg-green-500 rounded border-t-2 border-dashed border-green-500"></span>
+              <label class="text-sm font-medium text-slate-700">时段B</label>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">开始时间</label>
+                <input 
+                  type="datetime-local" 
+                  v-model="compareFilters.startTimeB" 
+                  class="w-full border border-slate-300 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" 
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">结束时间</label>
+                <input 
+                  type="datetime-local" 
+                  v-model="compareFilters.endTimeB" 
+                  class="w-full border border-slate-300 rounded-md px-2 py-1 text-xs focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 flex justify-end gap-2">
+          <button 
+            @click="fetchChartData" 
+            class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            应用对比
+          </button>
+        </div>
+      </div>
+
       <div class="h-72">
         <Line v-if="chartData" :data="chartData" :options="chartOptions" />
         <div v-else class="h-full flex items-center justify-center text-slate-400">
@@ -250,6 +351,16 @@ const predictionMethod = ref<'auto' | 'linear' | 'sma'>('auto')
 const predictionInfo = ref<{ [key: number]: any }>({})
 const selectedCount = computed(() => chartSensorIds.value.length)
 
+const compareMode = ref(false)
+const compareFilters = ref({
+  startTimeA: '',
+  endTimeA: '',
+  startTimeB: '',
+  endTimeB: ''
+})
+const quickCompare = ref('')
+const comparePeriodLabels = ref<{ periodA: string; periodB: string }>({ periodA: '', periodB: '' })
+
 const SENSOR_COLORS = [
   { border: '#3b82f6', fill: 'rgba(59, 130, 246, 0.1)', pred: '#8b5cf6', ci: 'rgba(139, 92, 246, 0.12)' },
   { border: '#10b981', fill: 'rgba(16, 185, 129, 0.1)', pred: '#059669', ci: 'rgba(16, 185, 129, 0.12)' },
@@ -262,11 +373,30 @@ const SENSOR_COLORS = [
 ]
 
 const getSensorColor = (idx: number) => SENSOR_COLORS[idx % SENSOR_COLORS.length]
-const chartOptions = {
+const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: { display: true, position: 'top' as const },
+    legend: { 
+      display: true, 
+      position: 'top' as const,
+      labels: {
+        usePointStyle: false,
+        padding: 15,
+        generateLabels: (chart: any) => {
+          const datasets = chart.data.datasets
+          return datasets.map((ds: any, i: number) => ({
+            text: ds.label,
+            fillStyle: ds.backgroundColor,
+            strokeStyle: ds.borderColor,
+            lineWidth: ds.borderWidth || 2,
+            lineDash: ds.borderDash || [],
+            hidden: !chart.getDataVisibility(i),
+            index: i
+          }))
+        }
+      }
+    },
     tooltip: {
       mode: 'index' as const,
       intersect: false
@@ -276,7 +406,7 @@ const chartOptions = {
     x: { grid: { display: false } },
     y: { grid: { color: '#f1f5f9' } }
   }
-}
+}))
 
 const visiblePages = computed(() => {
   const pages: number[] = []
@@ -312,6 +442,41 @@ const setQuickRange = (range: string) => {
   filters.value.startTime = formatInputDatetime(start)
   filters.value.endTime = formatInputDatetime(now)
   fetchRecords()
+}
+
+const setQuickCompare = (range: string) => {
+  quickCompare.value = range
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000)
+  const dayBeforeYesterday = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000)
+  
+  if (range === 'weekvslastweek') {
+    const lastWeekEnd = new Date(today.getTime() - 24 * 60 * 60 * 1000)
+    const lastWeekStart = new Date(lastWeekEnd.getTime() - 6 * 24 * 60 * 60 * 1000)
+    const prevWeekEnd = new Date(lastWeekStart.getTime() - 24 * 60 * 60 * 1000)
+    const prevWeekStart = new Date(prevWeekEnd.getTime() - 6 * 24 * 60 * 60 * 1000)
+    compareFilters.value.startTimeA = formatInputDatetime(prevWeekStart)
+    compareFilters.value.endTimeA = formatInputDatetime(prevWeekEnd)
+    compareFilters.value.startTimeB = formatInputDatetime(lastWeekStart)
+    compareFilters.value.endTimeB = formatInputDatetime(lastWeekEnd)
+  } else if (range === 'monthvslastmonth') {
+    const lastMonthEnd = new Date(today.getTime() - 24 * 60 * 60 * 1000)
+    const lastMonthStart = new Date(lastMonthEnd.getTime() - 29 * 24 * 60 * 60 * 1000)
+    const prevMonthEnd = new Date(lastMonthStart.getTime() - 24 * 60 * 60 * 1000)
+    const prevMonthStart = new Date(prevMonthEnd.getTime() - 29 * 24 * 60 * 60 * 1000)
+    compareFilters.value.startTimeA = formatInputDatetime(prevMonthStart)
+    compareFilters.value.endTimeA = formatInputDatetime(prevMonthEnd)
+    compareFilters.value.startTimeB = formatInputDatetime(lastMonthStart)
+    compareFilters.value.endTimeB = formatInputDatetime(lastMonthEnd)
+  } else if (range === 'yesterdayvstoday') {
+    compareFilters.value.startTimeA = formatInputDatetime(dayBeforeYesterday)
+    compareFilters.value.endTimeA = formatInputDatetime(yesterday)
+    compareFilters.value.startTimeB = formatInputDatetime(yesterday)
+    compareFilters.value.endTimeB = formatInputDatetime(now)
+  }
+  
+  fetchChartData()
 }
 
 const formatInputDatetime = (date: Date) => {
@@ -374,7 +539,7 @@ const fetchRecords = async () => {
 }
 
 const fetchPrediction = async () => {
-  if (chartSensorIds.value.length === 0 || !showPrediction.value) return null
+  if (chartSensorIds.value.length === 0 || !showPrediction.value || compareMode.value) return null
   try {
     const result = await get('/api/temperature/predict', {
       sensorIds: chartSensorIds.value.join(','),
@@ -393,164 +558,259 @@ const fetchPrediction = async () => {
 const fetchChartData = async () => {
   if (chartSensorIds.value.length === 0) return
   try {
-    const params: any = { sensorIds: chartSensorIds.value.join(',') }
-    if (filters.value.startTime) params.startTime = filters.value.startTime
-    if (filters.value.endTime) params.endTime = filters.value.endTime
-    else {
-      const now = new Date()
-      params.endTime = now.toISOString()
-      params.startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
-    }
-
-    const [chartResult, predictionRaw] = await Promise.all([
-      get('/api/temperature/chart', params),
-      fetchPrediction()
-    ])
-
-    if (chartResult?.success && chartResult.data) {
-      const { labels, series } = chartResult.data
-      const predictions = predictionRaw
-        ? (Array.isArray(predictionRaw) ? predictionRaw : [predictionRaw])
-        : []
-
-      predictionInfo.value = {}
-      predictions.forEach((p: any) => {
-        if (p && p.sensorId) {
-          predictionInfo.value[p.sensorId] = {
-            method: p.method,
-            rSquared: p.rSquared,
-            hasWarning: p.warningPoints && p.warningPoints.length > 0,
-            lastRecordTime: p.lastRecordTime || '',
-            lastTemperature: p.lastTemperature || 0,
-            sensorName: p.sensorName
-          }
-        }
-      })
-
-      const datasets: any[] = []
-      let mergedLabels = [...labels]
-      let predLabels: string[] = []
-
-      if (predictions.length > 0 && predictions[0].labels && predictions[0].labels.length > 0) {
-        predLabels = predictions[0].labels
-        mergedLabels = [...labels, ...predLabels]
+    if (compareMode.value) {
+      const params: any = {
+        sensorIds: chartSensorIds.value.join(','),
+        compareMode: 'true',
+        startTimeA: compareFilters.value.startTimeA,
+        endTimeA: compareFilters.value.endTimeA,
+        startTimeB: compareFilters.value.startTimeB,
+        endTimeB: compareFilters.value.endTimeB
       }
 
-      const predPlaceholderLen = labels.length
-      const globalWarningMax = Math.min(...series.map((s: any) => s.warningMax))
-      const globalWarningMin = Math.max(...series.map((s: any) => s.warningMin))
+      const chartResult = await get('/api/temperature/chart', params)
 
-      series.forEach((s: any, idx: number) => {
-        const color = getSensorColor(idx)
-        const paddedTemps = predLabels.length > 0
-          ? [...s.temperatures, ...new Array(predLabels.length).fill(null)]
-          : s.temperatures
+      if (chartResult?.success && chartResult.data) {
+        const { labels, seriesA, seriesB, periodA, periodB } = chartResult.data
+        
+        if (periodA?.label) comparePeriodLabels.value.periodA = periodA.label
+        if (periodB?.label) comparePeriodLabels.value.periodB = periodB.label
 
-        datasets.push({
-          label: s.sensorName,
-          data: paddedTemps,
-          borderColor: color.border,
-          backgroundColor: color.fill,
-          fill: true,
-          tension: 0.4,
-          pointRadius: s.temperatures.filter((t: any) => t !== null).length > 100 ? 0 : 3,
-          order: 10 + idx
+        const datasets: any[] = []
+        const mergedLabels = [...labels]
+
+        const allSeries = [...seriesA, ...seriesB]
+        const globalWarningMax = Math.min(...allSeries.map((s: any) => s.warningMax))
+        const globalWarningMin = Math.max(...allSeries.map((s: any) => s.warningMin))
+
+        seriesA.forEach((s: any, idx: number) => {
+          const color = getSensorColor(idx)
+          const labelA = comparePeriodLabels.value.periodA 
+            ? `${s.sensorName} - ${comparePeriodLabels.value.periodA}` 
+            : `${s.sensorName} - 时段A`
+
+          datasets.push({
+            label: labelA,
+            data: s.temperatures,
+            borderColor: color.border,
+            backgroundColor: color.fill,
+            fill: false,
+            tension: 0.4,
+            pointRadius: s.temperatures.filter((t: any) => t !== null).length > 100 ? 0 : 3,
+            borderWidth: 2,
+            order: 10 + idx
+          })
         })
 
-        if (showPrediction.value) {
-          const pred = predictions.find((p: any) => p.sensorId === s.sensorId)
-          if (pred && pred.labels.length > 0) {
-            const predDataArr = new Array(predPlaceholderLen).fill(null).concat(pred.predicted)
-            const lowerBoundArr = new Array(predPlaceholderLen).fill(null).concat(pred.lowerBound)
-            const upperBoundArr = new Array(predPlaceholderLen).fill(null).concat(pred.upperBound)
+        seriesB.forEach((s: any, idx: number) => {
+          const color = getSensorColor(idx)
+          const labelB = comparePeriodLabels.value.periodB 
+            ? `${s.sensorName} - ${comparePeriodLabels.value.periodB}` 
+            : `${s.sensorName} - 时段B`
 
-            datasets.push(
-              {
-                label: `${s.sensorName} - 95%置信上限`,
-                data: upperBoundArr,
-                borderColor: 'transparent',
-                backgroundColor: color.ci,
-                pointRadius: 0,
-                fill: `+1`,
-                tension: 0.4,
-                order: 100 + idx * 3
-              },
-              {
-                label: `${s.sensorName} - 95%置信下限`,
-                data: lowerBoundArr,
-                borderColor: 'transparent',
-                backgroundColor: color.ci,
-                pointRadius: 0,
-                fill: false,
-                tension: 0.4,
-                order: 101 + idx * 3
-              },
-              {
-                label: `${s.sensorName} - 预测`,
-                data: predDataArr,
-                borderColor: color.pred,
-                borderDash: [8, 4],
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                pointRadius: 4,
-                pointBackgroundColor: color.pred,
-                fill: false,
-                tension: 0.4,
-                order: 50 + idx
-              }
-            )
+          datasets.push({
+            label: labelB,
+            data: s.temperatures,
+            borderColor: color.border,
+            backgroundColor: 'transparent',
+            fill: false,
+            tension: 0.4,
+            pointRadius: s.temperatures.filter((t: any) => t !== null).length > 100 ? 0 : 3,
+            borderDash: [6, 4],
+            borderWidth: 2,
+            order: 30 + idx
+          })
+        })
 
-            if (pred.warningPoints && pred.warningPoints.length > 0) {
-              const warningPointData = new Array(mergedLabels.length).fill(null)
-              pred.warningPoints.forEach((wp: { label: string; value: number }) => {
-                const labelIdx = mergedLabels.indexOf(wp.label)
-                if (labelIdx >= 0) warningPointData[labelIdx] = wp.value
-              })
-              datasets.push({
-                label: `${s.sensorName} - 超温预警`,
-                data: warningPointData,
-                borderColor: 'transparent',
-                backgroundColor: '#ef4444',
-                pointRadius: 8,
-                pointStyle: 'triangle',
-                pointBackgroundColor: '#ef4444',
-                pointBorderColor: '#fff',
-                pointBorderWidth: 2,
-                showLine: false,
-                order: 1
-              })
+        const warningMaxArrFull = new Array(mergedLabels.length).fill(globalWarningMax)
+        const warningMinArrFull = new Array(mergedLabels.length).fill(globalWarningMin)
+
+        datasets.push(
+          {
+            label: '预警上限',
+            data: warningMaxArrFull,
+            borderColor: '#f59e0b',
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false,
+            order: 5
+          },
+          {
+            label: '预警下限',
+            data: warningMinArrFull,
+            borderColor: '#f59e0b',
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false,
+            order: 6
+          }
+        )
+
+        chartData.value = {
+          labels: mergedLabels,
+          datasets
+        }
+      }
+    } else {
+      const params: any = { sensorIds: chartSensorIds.value.join(',') }
+      if (filters.value.startTime) params.startTime = filters.value.startTime
+      if (filters.value.endTime) params.endTime = filters.value.endTime
+      else {
+        const now = new Date()
+        params.endTime = now.toISOString()
+        params.startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
+      }
+
+      const [chartResult, predictionRaw] = await Promise.all([
+        get('/api/temperature/chart', params),
+        fetchPrediction()
+      ])
+
+      if (chartResult?.success && chartResult.data) {
+        const { labels, series } = chartResult.data
+        const predictions = predictionRaw
+          ? (Array.isArray(predictionRaw) ? predictionRaw : [predictionRaw])
+          : []
+
+        predictionInfo.value = {}
+        predictions.forEach((p: any) => {
+          if (p && p.sensorId) {
+            predictionInfo.value[p.sensorId] = {
+              method: p.method,
+              rSquared: p.rSquared,
+              hasWarning: p.warningPoints && p.warningPoints.length > 0,
+              lastRecordTime: p.lastRecordTime || '',
+              lastTemperature: p.lastTemperature || 0,
+              sensorName: p.sensorName
             }
           }
+        })
+
+        const datasets: any[] = []
+        let mergedLabels = [...labels]
+        let predLabels: string[] = []
+
+        if (predictions.length > 0 && predictions[0].labels && predictions[0].labels.length > 0) {
+          predLabels = predictions[0].labels
+          mergedLabels = [...labels, ...predLabels]
         }
-      })
 
-      const warningMaxArrFull = new Array(mergedLabels.length).fill(globalWarningMax)
-      const warningMinArrFull = new Array(mergedLabels.length).fill(globalWarningMin)
+        const predPlaceholderLen = labels.length
+        const globalWarningMax = Math.min(...series.map((s: any) => s.warningMax))
+        const globalWarningMin = Math.max(...series.map((s: any) => s.warningMin))
 
-      datasets.push(
-        {
-          label: '预警上限',
-          data: warningMaxArrFull,
-          borderColor: '#f59e0b',
-          borderDash: [5, 5],
-          pointRadius: 0,
-          fill: false,
-          order: 5
-        },
-        {
-          label: '预警下限',
-          data: warningMinArrFull,
-          borderColor: '#f59e0b',
-          borderDash: [5, 5],
-          pointRadius: 0,
-          fill: false,
-          order: 6
+        series.forEach((s: any, idx: number) => {
+          const color = getSensorColor(idx)
+          const paddedTemps = predLabels.length > 0
+            ? [...s.temperatures, ...new Array(predLabels.length).fill(null)]
+            : s.temperatures
+
+          datasets.push({
+            label: s.sensorName,
+            data: paddedTemps,
+            borderColor: color.border,
+            backgroundColor: color.fill,
+            fill: true,
+            tension: 0.4,
+            pointRadius: s.temperatures.filter((t: any) => t !== null).length > 100 ? 0 : 3,
+            order: 10 + idx
+          })
+
+          if (showPrediction.value) {
+            const pred = predictions.find((p: any) => p.sensorId === s.sensorId)
+            if (pred && pred.labels.length > 0) {
+              const predDataArr = new Array(predPlaceholderLen).fill(null).concat(pred.predicted)
+              const lowerBoundArr = new Array(predPlaceholderLen).fill(null).concat(pred.lowerBound)
+              const upperBoundArr = new Array(predPlaceholderLen).fill(null).concat(pred.upperBound)
+
+              datasets.push(
+                {
+                  label: `${s.sensorName} - 95%置信上限`,
+                  data: upperBoundArr,
+                  borderColor: 'transparent',
+                  backgroundColor: color.ci,
+                  pointRadius: 0,
+                  fill: `+1`,
+                  tension: 0.4,
+                  order: 100 + idx * 3
+                },
+                {
+                  label: `${s.sensorName} - 95%置信下限`,
+                  data: lowerBoundArr,
+                  borderColor: 'transparent',
+                  backgroundColor: color.ci,
+                  pointRadius: 0,
+                  fill: false,
+                  tension: 0.4,
+                  order: 101 + idx * 3
+                },
+                {
+                  label: `${s.sensorName} - 预测`,
+                  data: predDataArr,
+                  borderColor: color.pred,
+                  borderDash: [8, 4],
+                  backgroundColor: 'transparent',
+                  borderWidth: 2,
+                  pointRadius: 4,
+                  pointBackgroundColor: color.pred,
+                  fill: false,
+                  tension: 0.4,
+                  order: 50 + idx
+                }
+              )
+
+              if (pred.warningPoints && pred.warningPoints.length > 0) {
+                const warningPointData = new Array(mergedLabels.length).fill(null)
+                pred.warningPoints.forEach((wp: { label: string; value: number }) => {
+                  const labelIdx = mergedLabels.indexOf(wp.label)
+                  if (labelIdx >= 0) warningPointData[labelIdx] = wp.value
+                })
+                datasets.push({
+                  label: `${s.sensorName} - 超温预警`,
+                  data: warningPointData,
+                  borderColor: 'transparent',
+                  backgroundColor: '#ef4444',
+                  pointRadius: 8,
+                  pointStyle: 'triangle',
+                  pointBackgroundColor: '#ef4444',
+                  pointBorderColor: '#fff',
+                  pointBorderWidth: 2,
+                  showLine: false,
+                  order: 1
+                })
+              }
+            }
+          }
+        })
+
+        const warningMaxArrFull = new Array(mergedLabels.length).fill(globalWarningMax)
+        const warningMinArrFull = new Array(mergedLabels.length).fill(globalWarningMin)
+
+        datasets.push(
+          {
+            label: '预警上限',
+            data: warningMaxArrFull,
+            borderColor: '#f59e0b',
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false,
+            order: 5
+          },
+          {
+            label: '预警下限',
+            data: warningMinArrFull,
+            borderColor: '#f59e0b',
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false,
+            order: 6
+          }
+        )
+
+        chartData.value = {
+          labels: mergedLabels,
+          datasets
         }
-      )
-
-      chartData.value = {
-        labels: mergedLabels,
-        datasets
       }
     }
   } catch (e) {
@@ -615,7 +875,22 @@ watch(chartSensorIds, () => {
 }, { deep: true })
 
 watch([showPrediction, predictionMethod], () => {
-  fetchChartData()
+  if (!compareMode.value) {
+    fetchChartData()
+  }
+})
+
+watch(compareMode, (newVal) => {
+  if (newVal) {
+    showPrediction.value = false
+    predictionInfo.value = {}
+    quickCompare.value = 'yesterdayvstoday'
+    setQuickCompare('yesterdayvstoday')
+  } else {
+    comparePeriodLabels.value = { periodA: '', periodB: '' }
+    quickCompare.value = ''
+    fetchChartData()
+  }
 })
 
 onMounted(() => {
