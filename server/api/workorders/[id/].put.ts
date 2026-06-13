@@ -1,10 +1,11 @@
 import { prisma } from '~/server/utils/prisma'
+import { calculateSlaDueDate } from '~/server/utils/sla'
 
 export default defineEventHandler(async (event) => {
   const id = parseInt(event.context.params?.id as string)
   const body = await readBody(event)
   const userId = event.context.userId
-  const { action, content, assigneeId, status } = body
+  const { action, content, assigneeId, status, priority } = body
 
   if (!id) {
     throw createError({
@@ -60,6 +61,13 @@ export default defineEventHandler(async (event) => {
     recordContent = content || '关闭工单'
   } else if (status) {
     updateData.status = status
+  }
+
+  if (priority && priority !== workOrder.priority) {
+    updateData.priority = priority
+    updateData.slaDueDate = calculateSlaDueDate(priority, workOrder.createdAt)
+    updateData.slaNotified = false
+    updateData.slaEscalated = false
   }
 
   const updated = await prisma.workOrder.update({

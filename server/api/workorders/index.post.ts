@@ -1,9 +1,11 @@
 import { prisma } from '~/server/utils/prisma'
+import { calculateSlaDueDate } from '~/server/utils/sla'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const userId = event.context.userId
   const { title, description, alertId, priority, assigneeId, dueDate } = body
+  const resolvedPriority: any = priority || 'MEDIUM'
 
   if (!title) {
     throw createError({
@@ -26,11 +28,12 @@ export default defineEventHandler(async (event) => {
       title,
       description,
       alertId: alertId ? parseInt(alertId) : null,
-      priority: priority || 'MEDIUM',
+      priority: resolvedPriority,
       status: assigneeId ? 'ASSIGNED' : 'PENDING',
       assigneeId: assigneeId ? parseInt(assigneeId) : null,
       creatorId: userId,
       dueDate: dueDate ? new Date(dueDate) : null,
+      slaDueDate: calculateSlaDueDate(resolvedPriority, now),
       assignedAt: assigneeId ? new Date() : null
     },
     include: {

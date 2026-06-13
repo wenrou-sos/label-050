@@ -172,6 +172,18 @@ enum WorkOrderPriority {
   URGENT
 }
 
+enum WorkOrderReminderType {
+  SLA_WARNING
+  SLA_OVERDUE
+  SLA_ESCALATED
+}
+
+enum WorkOrderReminderStatus {
+  UNREAD
+  READ
+  PROCESSED
+}
+
 model WorkOrder {
   id          Int       @id @default(autoincrement())
   code        String    @unique @db.VarChar(50)
@@ -186,6 +198,9 @@ model WorkOrder {
   creatorId   Int
   creator     User      @relation("WorkOrderCreator", fields: [creatorId], references: [id])
   dueDate     DateTime?
+  slaDueDate  DateTime?
+  slaNotified Boolean   @default(false)
+  slaEscalated Boolean  @default(false)
   assignedAt  DateTime?
   startedAt   DateTime?
   completedAt DateTime?
@@ -194,12 +209,14 @@ model WorkOrder {
   updatedAt   DateTime  @updatedAt
   records     WorkOrderRecord[]
   attachments WorkOrderAttachment[]
+  reminders   WorkOrderReminder[]
 
   @@index([alertId])
   @@index([assigneeId])
   @@index([status])
   @@index([priority])
   @@index([createdAt])
+  @@index([slaDueDate])
 }
 
 model WorkOrderRecord {
@@ -227,6 +244,25 @@ model WorkOrderAttachment {
   uploadedAt  DateTime  @default(now())
 
   @@index([workOrderId])
+}
+
+model WorkOrderReminder {
+  id          Int       @id @default(autoincrement())
+  workOrderId Int
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id])
+  userId      Int
+  type        WorkOrderReminderType
+  title       String    @db.VarChar(300)
+  content     String?   @db.Text
+  status      WorkOrderReminderStatus @default(UNREAD)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([workOrderId])
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
 }
 
 model AlertSubscription {

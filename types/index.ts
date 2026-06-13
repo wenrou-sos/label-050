@@ -79,6 +79,10 @@ export type WorkOrderStatus = 'PENDING' | 'ASSIGNED' | 'PROCESSING' | 'COMPLETED
 
 export type WorkOrderPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
 
+export type WorkOrderReminderType = 'SLA_WARNING' | 'SLA_OVERDUE' | 'SLA_ESCALATED'
+
+export type WorkOrderReminderStatus = 'UNREAD' | 'READ' | 'PROCESSED'
+
 export interface WorkOrder {
   id: number
   code: string
@@ -95,6 +99,9 @@ export interface WorkOrder {
   creatorId: number
   creatorName?: string
   dueDate?: string
+  slaDueDate?: string
+  slaNotified?: boolean
+  slaEscalated?: boolean
   assignedAt?: string
   startedAt?: string
   completedAt?: string
@@ -155,6 +162,21 @@ export interface WorkOrderAttachment {
   uploadedAt: string
 }
 
+export interface WorkOrderReminder {
+  id: number
+  workOrderId: number
+  workOrderCode?: string
+  workOrderTitle?: string
+  workOrderPriority?: WorkOrderPriority
+  workOrderStatus?: WorkOrderStatus
+  type: WorkOrderReminderType
+  title: string
+  content?: string
+  status: WorkOrderReminderStatus
+  readAt?: string
+  createdAt: string
+}
+
 export interface WorkOrderQuery {
   page?: number
   pageSize?: number
@@ -179,6 +201,7 @@ export interface UpdateWorkOrderRequest {
   content?: string
   assigneeId?: number
   status?: WorkOrderStatus
+  priority?: WorkOrderPriority
 }
 
 export interface User {
