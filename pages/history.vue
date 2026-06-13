@@ -71,6 +71,7 @@
           </select>
           <span v-if="predictionInfo.method" class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
             模型: {{ predictionInfo.method === 'linear' ? '线性回归' : '移动平均' }} · R²: {{ predictionInfo.rSquared }}
+            <span v-if="predictionInfo.lastRecordTime" class="ml-1 text-slate-400">| 基准: {{ predictionInfo.lastRecordTime }} ({{ predictionInfo.lastTemperature }}°C)</span>
           </span>
           <span v-if="predictionInfo.hasWarning" class="text-xs text-red-600 bg-red-50 px-2 py-1 rounded flex items-center gap-1">
             <span class="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
@@ -238,7 +239,9 @@ const predictionMethod = ref<'auto' | 'linear' | 'sma'>('auto')
 const predictionInfo = ref({
   method: '',
   rSquared: 0,
-  hasWarning: false
+  hasWarning: false,
+  lastRecordTime: '',
+  lastTemperature: 0
 })
 const chartOptions = {
   responsive: true,
@@ -431,7 +434,9 @@ const fetchChartData = async () => {
         predictionInfo.value = {
           method: prediction.method,
           rSquared: prediction.rSquared,
-          hasWarning: prediction.warningPoints && prediction.warningPoints.length > 0
+          hasWarning: prediction.warningPoints && prediction.warningPoints.length > 0,
+          lastRecordTime: prediction.lastRecordTime || '',
+          lastTemperature: prediction.lastTemperature || 0
         }
 
         mergedLabels = [...labels, ...prediction.labels]
@@ -533,7 +538,7 @@ const fetchChartData = async () => {
           tempDs.data = paddedTemps
         }
       } else {
-        predictionInfo.value = { method: '', rSquared: 0, hasWarning: false }
+        predictionInfo.value = { method: '', rSquared: 0, hasWarning: false, lastRecordTime: '', lastTemperature: 0 }
       }
 
       chartData.value = {
