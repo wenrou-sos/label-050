@@ -57,8 +57,26 @@
     </div>
 
     <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-semibold text-slate-800">温度趋势图</h3>
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+        <div class="flex items-center gap-3">
+          <h3 class="text-lg font-semibold text-slate-800">温度趋势图</h3>
+          <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+            <input type="checkbox" v-model="showPrediction" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+            <span>显示预测</span>
+          </label>
+          <select v-if="showPrediction" v-model="predictionMethod" class="text-sm border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+            <option value="auto">自动</option>
+            <option value="linear">线性回归</option>
+            <option value="sma">移动平均</option>
+          </select>
+          <span v-if="predictionInfo.method" class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
+            模型: {{ predictionInfo.method === 'linear' ? '线性回归' : '移动平均' }} · R²: {{ predictionInfo.rSquared }}
+          </span>
+          <span v-if="predictionInfo.hasWarning" class="text-xs text-red-600 bg-red-50 px-2 py-1 rounded flex items-center gap-1">
+            <span class="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
+            预测将超温
+          </span>
+        </div>
         <div class="flex items-center gap-3">
           <select v-model="chartSensorId" class="text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
             <option v-for="sensor in sensors" :key="sensor.id" :value="sensor.id">{{ sensor.name }}</option>
@@ -215,11 +233,22 @@ const filters = ref({
 
 const chartSensorId = ref<number | ''>('')
 const chartData = ref<any>(null)
+const showPrediction = ref(true)
+const predictionMethod = ref<'auto' | 'linear' | 'sma'>('auto')
+const predictionInfo = ref({
+  method: '',
+  rSquared: 0,
+  hasWarning: false
+})
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: { display: true, position: 'top' as const }
+    legend: { display: true, position: 'top' as const },
+    tooltip: {
+      mode: 'index' as const,
+      intersect: false
+    }
   },
   scales: {
     x: { grid: { display: false } },
@@ -322,6 +351,23 @@ const fetchRecords = async () => {
   }
 }
 
+const fetchPrediction = async () => {
+  if (!chartSensorId.value || !showPrediction.value) return null
+  try {
+    const result = await get('/api/temperature/predict', {
+      sensorId: chartSensorId.value,
+      hours: 24,
+      steps: 12,
+      stepIntervalSec: 300,
+      method: predictionMethod.value
+    })
+    return result?.success ? result.data : null
+  } catch (e) {
+    console.error('Failed to fetch prediction:', e)
+    return null
+  }
+}
+
 const fetchChartData = async () => {
   if (!chartSensorId.value) return
   try {
@@ -334,43 +380,165 @@ const fetchChartData = async () => {
       params.startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
     }
 
-    const result = await get('/api/temperature/chart', params)
-    if (result?.success && result.data) {
-      const { labels, temperatures: rawTemps, records: rawRecords } = result.data
+    const [chartResult, prediction] = await Promise.all([
+      get('/api/temperature/chart', params),
+      fetchPrediction()
+    ])
+
+    if (chartResult?.success && chartResult.data) {
+      const { labels, temperatures: rawTemps, records: rawRecords } = chartResult.data
       const sensor = sensors.value.find(s => s.id === chartSensorId.value)
       const temperatures = rawTemps.map((t: any) => Number(t))
-      const warningMaxArr = new Array(labels.length).fill(Number(sensor?.warningMax || 8))
-      const warningMinArr = new Array(labels.length).fill(Number(sensor?.warningMin || 2))
+      const warningMax = Number(sensor?.warningMax || 8)
+      const warningMin = Number(sensor?.warningMin || 2)
+      const warningMaxArr = new Array(labels.length).fill(warningMax)
+      const warningMinArr = new Array(labels.length).fill(warningMin)
 
-      chartData.value = {
-        labels,
-        datasets: [
+      const datasets: any[] = [
+        {
+          label: '温度',
+          data: temperatures,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: rawRecords && rawRecords.length > 100 ? 0 : 3,
+          order: 3
+        },
+        {
+          label: '预警上限',
+          data: warningMaxArr,
+          borderColor: '#f59e0b',
+          borderDash: [5, 5],
+          pointRadius: 0,
+          fill: false,
+          order: 5
+        },
+        {
+          label: '预警下限',
+          data: warningMinArr,
+          borderColor: '#f59e0b',
+          borderDash: [5, 5],
+          pointRadius: 0,
+          fill: false,
+          order: 6
+        }
+      ]
+
+      let mergedLabels = [...labels]
+
+      if (prediction && prediction.labels.length > 0) {
+        predictionInfo.value = {
+          method: prediction.method,
+          rSquared: prediction.rSquared,
+          hasWarning: prediction.warningPoints && prediction.warningPoints.length > 0
+        }
+
+        mergedLabels = [...labels, ...prediction.labels]
+
+        const predPlaceholderLen = labels.length
+        const predDataArr = new Array(predPlaceholderLen).fill(null).concat(prediction.predicted)
+        const lowerBoundArr = new Array(predPlaceholderLen).fill(null).concat(prediction.lowerBound)
+        const upperBoundArr = new Array(predPlaceholderLen).fill(null).concat(prediction.upperBound)
+        const warningMaxArrFull = new Array(mergedLabels.length).fill(warningMax)
+        const warningMinArrFull = new Array(mergedLabels.length).fill(warningMin)
+
+        const warningPointData = new Array(mergedLabels.length).fill(null)
+        if (prediction.warningPoints && prediction.warningPoints.length > 0) {
+          prediction.warningPoints.forEach((wp: { label: string; value: number }) => {
+            const idx = mergedLabels.indexOf(wp.label)
+            if (idx >= 0) warningPointData[idx] = wp.value
+          })
+        }
+
+        datasets.push(
           {
-            label: '温度',
-            data: temperatures,
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            fill: true,
+            label: '95%置信上限',
+            data: upperBoundArr,
+            borderColor: 'rgba(156, 163, 175, 0)',
+            backgroundColor: 'rgba(147, 197, 253, 0.15)',
+            pointRadius: 0,
+            fill: '+1',
             tension: 0.4,
-            pointRadius: rawRecords && rawRecords.length > 100 ? 0 : 3
+            order: 7
+          },
+          {
+            label: '95%置信下限',
+            data: lowerBoundArr,
+            borderColor: 'rgba(156, 163, 175, 0)',
+            backgroundColor: 'rgba(147, 197, 253, 0.15)',
+            pointRadius: 0,
+            fill: false,
+            tension: 0.4,
+            order: 8
+          },
+          {
+            label: '预测温度',
+            data: predDataArr,
+            borderColor: '#8b5cf6',
+            borderDash: [8, 4],
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 4,
+            pointBackgroundColor: '#8b5cf6',
+            fill: false,
+            tension: 0.4,
+            order: 2
           },
           {
             label: '预警上限',
-            data: warningMaxArr,
+            data: warningMaxArrFull,
             borderColor: '#f59e0b',
             borderDash: [5, 5],
             pointRadius: 0,
-            fill: false
+            fill: false,
+            order: 5
           },
           {
             label: '预警下限',
-            data: warningMinArr,
+            data: warningMinArrFull,
             borderColor: '#f59e0b',
             borderDash: [5, 5],
             pointRadius: 0,
-            fill: false
+            fill: false,
+            order: 6
+          },
+          {
+            label: '超温预警',
+            data: warningPointData,
+            borderColor: 'transparent',
+            backgroundColor: '#ef4444',
+            pointRadius: 8,
+            pointStyle: 'triangle',
+            pointBackgroundColor: '#ef4444',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            showLine: false,
+            order: 1
           }
-        ]
+        )
+
+        const existingIdx = datasets.findIndex(d => d.label === '预警上限' && d.order === 5)
+        if (existingIdx >= 0) {
+          datasets.splice(existingIdx, 1)
+        }
+        const existingIdx2 = datasets.findIndex(d => d.label === '预警下限' && d.order === 6)
+        if (existingIdx2 >= 0) {
+          datasets.splice(existingIdx2, 1)
+        }
+        const existingTemp = datasets.findIndex(d => d.label === '温度')
+        if (existingTemp >= 0) {
+          const tempDs = datasets[existingTemp]
+          const paddedTemps = [...temperatures, ...new Array(prediction.labels.length).fill(null)]
+          tempDs.data = paddedTemps
+        }
+      } else {
+        predictionInfo.value = { method: '', rSquared: 0, hasWarning: false }
+      }
+
+      chartData.value = {
+        labels: mergedLabels,
+        datasets
       }
     }
   } catch (e) {
@@ -431,6 +599,10 @@ const exportData = async (format: string) => {
 }
 
 watch(chartSensorId, () => {
+  fetchChartData()
+})
+
+watch([showPrediction, predictionMethod], () => {
   fetchChartData()
 })
 

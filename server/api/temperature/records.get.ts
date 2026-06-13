@@ -32,8 +32,16 @@ export default defineEventHandler(async (event) => {
     prisma.temperatureRecord.findMany({
       where,
       include: {
-        sensor: { select: { id: true, name: true, code: true, warningMin: true, warningMax: true } },
-        location: { select: { id: true, name: true } }
+        sensor: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            warningMin: true,
+            warningMax: true,
+            location: { select: { id: true, name: true } }
+          }
+        }
       },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -47,8 +55,8 @@ export default defineEventHandler(async (event) => {
     sensorId: record.sensorId,
     sensorName: record.sensor?.name,
     sensorCode: record.sensor?.code,
-    locationId: record.locationId,
-    locationName: record.location?.name,
+    locationId: record.locationId ?? record.sensor?.location?.id,
+    locationName: record.sensor?.location?.name,
     temperature: Number(record.temperature),
     humidity: record.humidity ? Number(record.humidity) : null,
     recordTime: record.recordTime,

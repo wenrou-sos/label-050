@@ -21,8 +21,13 @@ export default defineEventHandler(async (event) => {
   const records = await prisma.temperatureRecord.findMany({
     where,
     include: {
-      sensor: { select: { name: true, code: true } },
-      location: { select: { name: true } }
+      sensor: {
+        select: {
+          name: true,
+          code: true,
+          location: { select: { name: true } }
+        }
+      }
     },
     orderBy: { recordTime: 'asc' },
     take: 10000
@@ -33,7 +38,7 @@ export default defineEventHandler(async (event) => {
       id: r.id.toString(),
       sensorCode: r.sensor?.code || '',
       sensorName: r.sensor?.name || '',
-      locationName: r.location?.name || '',
+      locationName: r.sensor?.location?.name || '',
       temperature: r.temperature.toString(),
       humidity: r.humidity?.toString() || '',
       recordTime: r.recordTime.toISOString(),
@@ -98,7 +103,7 @@ export default defineEventHandler(async (event) => {
         id: r.id.toString(),
         sensorCode: r.sensor?.code || '',
         sensorName: r.sensor?.name || '',
-        locationName: r.location?.name || '',
+        locationName: r.sensor?.location?.name || '',
         temperature: r.temperature,
         humidity: r.humidity || '',
         recordTime: r.recordTime.toISOString(),
